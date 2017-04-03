@@ -5,8 +5,9 @@
 'use strict';
 
 import {
-    Workspace, FileSystemWatcher, TextDocumentWillSaveEvent, TextDocumentChangeEvent,
-    Languages, DiagnosticCollection, Commands, Window, OutputChannel
+	Workspace, FileSystemWatcher, TextDocumentWillSaveEvent,
+	Languages, DiagnosticCollection, Commands, Window, OutputChannel,
+	TextDocumentDidChangeEvent
 } from './services';
 
 import {
@@ -15,12 +16,11 @@ import {
 	NotificationType, NotificationType0,
 	NotificationHandler, NotificationHandler0, GenericNotificationHandler,
 	Trace, Tracer, Event, Emitter,
-	 CancellationToken, Disposable, MessageConnection
+	CancellationToken, Disposable, MessageConnection
 } from 'vscode-jsonrpc';
 
 import {
-	WorkspaceEdit, TextDocument, CompletionList, CompletionItem, Hover, SignatureHelp, Definition, Location,
-    DocumentHighlight, SymbolInformation, Command, CodeLens, TextEdit, DocumentLink
+	WorkspaceEdit, TextDocument
 } from 'vscode-languageserver-types';
 
 import {
@@ -67,7 +67,7 @@ export {
 export * from 'vscode-languageserver-types';
 export * from './protocol';
 
-interface IConnection {
+export interface IConnection {
 
 	listen(): void;
 
@@ -122,11 +122,8 @@ interface ConnectionErrorHandler {
 interface ConnectionCloseHandler {
 	(): void;
 }
-export interface ConnectionProvider {
-    (): Promise<MessageConnection>;
-}
 function createConnection(connection: MessageConnection, errorHandler: ConnectionErrorHandler, closeHandler: ConnectionCloseHandler): IConnection {
-    connection.onError((data) => { errorHandler(data[0], data[1], data[2]) });
+	connection.onError((data) => { errorHandler(data[0], data[1], data[2]) });
 	connection.onClose(closeHandler);
 	let result: IConnection = {
 
@@ -218,7 +215,7 @@ class DefaultErrorHandler implements ErrorHandler {
 
 	private restarts: number[];
 
-	constructor(private name: string, private window?: Window) {
+	constructor(private name: string, private client: BaseLanguageClient) {
 		this.restarts = [];
 	}
 
@@ -235,8 +232,8 @@ class DefaultErrorHandler implements ErrorHandler {
 		} else {
 			let diff = this.restarts[this.restarts.length - 1] - this.restarts[0];
 			if (diff <= 3 * 60 * 1000) {
-				if (this.window) {
-					this.window.showMessage(MessageType.Error, `The ${this.name} server crashed 5 times in the last 3 minutes. The server will not be restarted.`);
+				if (this.client.window) {
+					this.client.window.showMessage(MessageType.Error, `The ${this.name} server crashed 5 times in the last 3 minutes. The server will not be restarted.`);
 				}
 				return CloseAction.DoNotRestart;
 			} else {
@@ -264,36 +261,22 @@ export enum RevealOutputChannelOn {
 }
 
 export interface LanguageClientOptions {
-    languages: Languages;
-    workspace?: Workspace;
-    commands?: Commands;
-	window?: Window;
 	documentSelector?: DocumentSelector | string[];
 	synchronize?: SynchronizeOptions;
 	diagnosticCollectionName?: string;
 	outputChannelName?: string;
 	revealOutputChannelOn?: RevealOutputChannelOn;
-	/**
-	 * The encoding use to read stdout and stderr. Defaults
-	 * to 'utf8' if ommitted.
-	 */
-	stdioEncoding?: string;
 	initializationOptions?: any | (() => any);
 	initializationFailedHandler?: InitializationFailedHandler;
-    errorHandler?: ErrorHandler;
+	errorHandler?: ErrorHandler;
 }
 
-interface ResolvedClientOptions {
-    languages: Languages;
-    workspace?: Workspace;
-    commands?: Commands;
-	window?: Window;
+export interface ResolvedClientOptions {
 	documentSelector?: DocumentSelector;
 	synchronize: SynchronizeOptions;
 	diagnosticCollectionName?: string;
 	outputChannelName: string;
 	revealOutputChannelOn: RevealOutputChannelOn;
-	stdioEncoding: string;
 	initializationOptions?: any | (() => any);
 	initializationFailedHandler?: InitializationFailedHandler;
 	errorHandler: ErrorHandler;
@@ -339,11 +322,11 @@ class DocumentNotifiactions<P, E> implements FeatureHandler<TextDocumentRegistra
 	protected _selectors: Map<string, DocumentSelector> = new Map<string, DocumentSelector>();
 
 	public static textDocumentFilter(languages: Languages, selectors: IterableIterator<DocumentSelector>, textDocument: TextDocument): boolean {
-        for (const selector of selectors) {
-            if (languages.match(selector, textDocument)) {
-                return true;
-            }
-        }
+		for (const selector of selectors) {
+			if (languages.match(selector, textDocument)) {
+				return true;
+			}
+		}
 		return false;
 	}
 
@@ -365,7 +348,7 @@ class DocumentNotifiactions<P, E> implements FeatureHandler<TextDocumentRegistra
 
 	private callback(data: E): void {
 		if (!this._selectorFilter || this._selectorFilter(this._selectors.values(), data)) {
-            this._client.sendNotification(this._type, this._createParams(data));
+			this._client.sendNotification(this._type, this._createParams(data));
 			this.notificationSent(data);
 		}
 	}
@@ -391,16 +374,16 @@ class DocumentNotifiactions<P, E> implements FeatureHandler<TextDocumentRegistra
 class DidOpenTextDocumentFeature extends DocumentNotifiactions<DidOpenTextDocumentParams, TextDocument> {
 	constructor(client: BaseLanguageClient, private _syncedDocuments: Map<string, TextDocument>) {
 		super(
-			client, client.workspace!.onDidOpenTextDocument, DidOpenTextDocumentNotification.type,
-            (textDocument) => {
-                const {uri, languageId, version} = textDocument;
-                const text = textDocument.getText();
-                return { 
-                    textDocument: {
-                        uri, languageId, version, text
-                    }
-                }
-            },
+			client, client.workspace.onDidOpenTextDocument, DidOpenTextDocumentNotification.type,
+			(textDocument) => {
+				const { uri, languageId, version } = textDocument;
+				const text = textDocument.getText();
+				return {
+					textDocument: {
+						uri, languageId, version, text
+					}
+				}
+			},
 			(selectors, data) => DocumentNotifiactions.textDocumentFilter(client.languages, selectors, data)
 		);
 	}
@@ -411,9 +394,9 @@ class DidOpenTextDocumentFeature extends DocumentNotifiactions<DidOpenTextDocume
 			return;
 		}
 		let documentSelector = data.registerOptions.documentSelector;
-        this._client.workspace!.textDocuments.forEach((textDocument) => {
+		this._client.workspace.textDocuments.forEach((textDocument) => {
 			let uri: string = textDocument.uri;
-			if (this._syncedDocuments.has(uri)) {
+			if (!textDocument || this._syncedDocuments.has(uri)) {
 				return;
 			}
 			if (this._client.languages.match(documentSelector, textDocument)) {
@@ -433,8 +416,8 @@ class DidCloseTextDocumentFeature extends DocumentNotifiactions<DidCloseTextDocu
 
 	constructor(client: BaseLanguageClient, private _syncedDocuments: Map<string, TextDocument>) {
 		super(
-			client, client.workspace!.onDidCloseTextDocument, DidCloseTextDocumentNotification.type,
-            (textDocument) => <DidCloseTextDocumentParams>{textDocument},
+			client, client.workspace.onDidCloseTextDocument, DidCloseTextDocumentNotification.type,
+			(textDocument) => <DidCloseTextDocumentParams>{ textDocument },
 			(selectors, data) => DocumentNotifiactions.textDocumentFilter(client.languages, selectors, data)
 		);
 	}
@@ -468,12 +451,12 @@ class DidChangeTextDocumentFeature implements FeatureHandler<TextDocumentChangeR
 	private _changeData: Map<string, DidChangeTextDocumentData> = new Map<string, DidChangeTextDocumentData>();
 	private _forcingDelivery: boolean = false;
 	private _changeDelayer: { uri: string; delayer: Delayer<void> } | undefined;
-    private _workspace: Workspace;
-    private _languages: Languages | undefined;
+	private _workspace: Workspace;
+	private _languages: Languages;
 
 	constructor(private _client: BaseLanguageClient) {
-        this._workspace = _client.workspace!;
-        this._languages = _client.languages;
+		this._workspace = _client.workspace;
+		this._languages = _client.languages;
 	}
 
 	public register(data: RegistrationData<TextDocumentChangeRegistrationOptions>): void {
@@ -492,9 +475,9 @@ class DidChangeTextDocumentFeature implements FeatureHandler<TextDocumentChangeR
 		);
 	}
 
-	private callback(event: TextDocumentChangeEvent): void {
+	private callback(event: TextDocumentDidChangeEvent): void {
 		for (const changeData of this._changeData.values()) {
-			if (!this._languages || this._languages.match(changeData.documentSelector, event.textDocument)) {
+			if (this._languages.match(changeData.documentSelector, event.textDocument)) {
 				if (changeData.syncKind === TextDocumentSyncKind.Incremental) {
 					this._client.sendNotification(DidChangeTextDocumentNotification.type, event);
 					break;
@@ -523,13 +506,13 @@ class DidChangeTextDocumentFeature implements FeatureHandler<TextDocumentChangeR
 		}
 	}
 
-    private sendDidChangeTextDocumentNotification(textDocument: TextDocument): void {
-        const text = textDocument.getText();
-        this._client.sendNotification(DidChangeTextDocumentNotification.type, {
-            textDocument,
-            contentChanges: [{text}]
-        });
-    }
+	private sendDidChangeTextDocumentNotification(textDocument: TextDocument): void {
+		const text = textDocument.getText();
+		this._client.sendNotification(DidChangeTextDocumentNotification.type, {
+			textDocument,
+			contentChanges: [{ text }]
+		});
+	}
 
 	public unregister(id: string): void {
 		this._changeData.delete(id);
@@ -563,12 +546,12 @@ class WillSaveWaitUntilFeature implements FeatureHandler<TextDocumentRegistratio
 
 	private _listener: Disposable | undefined;
 	private _selectors: Map<string, DocumentSelector> = new Map<string, DocumentSelector>();
-    private workspace: Workspace;
-    private languages: Languages;
+	private workspace: Workspace;
+	private languages: Languages;
 
 	constructor(private _client: BaseLanguageClient) {
-        this.workspace = _client.workspace!;
-        this.languages = _client.languages;
+		this.workspace = _client.workspace;
+		this.languages = _client.languages;
 	}
 
 	public register(data: RegistrationData<TextDocumentRegistrationOptions>): void {
@@ -576,14 +559,14 @@ class WillSaveWaitUntilFeature implements FeatureHandler<TextDocumentRegistratio
 			return;
 		}
 		if (!this._listener) {
-			this._listener = this.workspace.onWillSaveTextDocument(this.callback, this);
+			this._listener = this.workspace.onWillSaveTextDocument!(this.callback, this);
 		}
 		this._selectors.set(data.id, data.registerOptions.documentSelector);
 	}
 
 	private callback(event: TextDocumentWillSaveEvent): void {
-        if (DocumentNotifiactions.textDocumentFilter(this.languages, this._selectors.values(), event.textDocument)) {
-			event.waitUntil(
+		if (DocumentNotifiactions.textDocumentFilter(this.languages, this._selectors.values(), event.textDocument)) {
+			event.waitUntil!(
 				this._client.sendRequest(
 					WillSaveTextDocumentWaitUntilRequest.type,
 					event
@@ -614,16 +597,16 @@ class DidSaveTextDocumentFeature extends DocumentNotifiactions<DidSaveTextDocume
 
 	constructor(client: BaseLanguageClient) {
 		super(
-			client, client.workspace!.onDidSaveTextDocument, DidSaveTextDocumentNotification.type,
-            (textDocument) => {
-                let result: DidSaveTextDocumentParams = {
-                    textDocument
-                }
-                if (this._includeText) {
-                    result.text = textDocument.getText()
-                }
-                return result;
-            },
+			client, client.workspace.onDidSaveTextDocument!, DidSaveTextDocumentNotification.type,
+			(textDocument) => {
+				let result: DidSaveTextDocumentParams = {
+					textDocument
+				}
+				if (this._includeText) {
+					result.text = textDocument.getText()
+				}
+				return result;
+			},
 			(selectors, data) => DocumentNotifiactions.textDocumentFilter(client.languages, selectors, data)
 		);
 	}
@@ -711,87 +694,9 @@ interface FeatureHandlerMap extends Map<string, FeatureHandler<any>> {
 	get(key: string): FeatureHandler<any>;
 }
 
-const clientCapabilities: ClientCapabilities = {
-	workspace: {
-		applyEdit: true,
-		workspaceEdit: {
-			documentChanges: true
-		},
-		didChangeConfiguration: {
-			dynamicRegistration: false
-		},
-		didChangeWatchedFiles: {
-			dynamicRegistration: false
-		},
-		symbol: {
-			dynamicRegistration: true
-		},
-		executeCommand: {
-			dynamicRegistration: true
-		}
-	},
-	textDocument: {
-		synchronization: {
-			dynamicRegistration: true,
-			willSave: true,
-			willSaveWaitUntil: true,
-			didSave: true
-		},
-		completion: {
-			dynamicRegistration: true,
-			completionItem: {
-				snippetSupport: true
-			}
-		},
-		hover: {
-			dynamicRegistration: true
-		},
-		signatureHelp: {
-			dynamicRegistration: true
-		},
-		references: {
-			dynamicRegistration: true
-		},
-		documentHighlight: {
-			dynamicRegistration: true
-		},
-		documentSymbol: {
-			dynamicRegistration: true
-		},
-		formatting: {
-			dynamicRegistration: true
-		},
-		rangeFormatting: {
-			dynamicRegistration: true
-		},
-		onTypeFormatting: {
-			dynamicRegistration: true
-		},
-		definition: {
-			dynamicRegistration: true
-		},
-		codeAction: {
-			dynamicRegistration: true
-		},
-		codeLens: {
-			dynamicRegistration: true
-		},
-		documentLink: {
-			dynamicRegistration: true
-		},
-		rename: {
-			dynamicRegistration: true
-		}
-	}
-}
+export abstract class BaseLanguageClient {
 
-export class BaseLanguageClient {
-
-	private _id: string;
-	private _name: string;
-    private _connectionProvider: ConnectionProvider;
 	private _clientOptions: ResolvedClientOptions;
-	private _forceDebug: boolean;
 
 	private _state: ClientState;
 	private _onReady: Promise<void>;
@@ -814,38 +719,16 @@ export class BaseLanguageClient {
 	private _trace: Trace;
 	private _tracer: Tracer;
 
-	public constructor(name: string, connectionProvider: ConnectionProvider, clientOptions: LanguageClientOptions, forceDebug?: boolean);
-	public constructor(id: string, name: string, connectionProvider: ConnectionProvider, clientOptions: LanguageClientOptions, forceDebug?: boolean);
-	public constructor(arg1: string, arg2: ConnectionProvider | string, arg3: LanguageClientOptions | ConnectionProvider, arg4?: boolean | LanguageClientOptions, arg5?: boolean) {
-		let clientOptions: LanguageClientOptions;
-		let forceDebug: boolean;
-		if (is.string(arg2)) {
-			this._id = arg1;
-			this._name = arg2;
-			this._connectionProvider = arg3 as ConnectionProvider;
-			clientOptions = arg4 as LanguageClientOptions;
-			forceDebug = !!arg5;
-		} else {
-			this._id = arg1.toLowerCase();
-			this._name = arg1;
-			this._connectionProvider = arg2 as ConnectionProvider;
-			clientOptions = arg3 as LanguageClientOptions;
-			forceDebug = arg4 as boolean;
-		}
-		if (forceDebug === void 0) { forceDebug = false; }
-
-		clientOptions = clientOptions || {};
+	constructor(private _id: string, private _name: string, clientOptions: LanguageClientOptions) {
 		this._clientOptions = {
-            ...clientOptions,
+			...clientOptions,
 			documentSelector: clientOptions.documentSelector || [],
 			synchronize: clientOptions.synchronize || {},
 			outputChannelName: clientOptions.outputChannelName || this._name,
 			revealOutputChannelOn: clientOptions.revealOutputChannelOn || RevealOutputChannelOn.Error,
-			stdioEncoding: clientOptions.stdioEncoding || 'utf8',
-			errorHandler: clientOptions.errorHandler || new DefaultErrorHandler(this._name, clientOptions.window),
+			errorHandler: clientOptions.errorHandler || new DefaultErrorHandler(this._name, this)
 		};
 		this._clientOptions.synchronize = this._clientOptions.synchronize || {};
-		this._forceDebug = forceDebug;
 
 		this.state = ClientState.Initial;
 		this._connectionPromise = undefined;
@@ -869,6 +752,13 @@ export class BaseLanguageClient {
 			}
 		};
 	}
+
+	abstract readonly languages: Languages;
+	abstract readonly workspace: Workspace;
+	abstract readonly commands?: Commands;
+	abstract readonly window?: Window;
+
+	protected abstract createRPCConnection(): Thenable<MessageConnection>;
 
 	private get state(): ClientState {
 		return this._state;
@@ -955,22 +845,6 @@ export class BaseLanguageClient {
 		}
 	}
 
-    public get languages(): Languages {
-        return this._clientOptions.languages;
-    }
-
-    public get workspace(): Workspace | undefined {
-        return this._clientOptions.workspace;
-    }
-
-    public get commands(): Commands | undefined {
-        return this._clientOptions.commands;
-    }
-
-    public get window(): Window | undefined {
-        return this._clientOptions.window;
-    }
-
 	public get onTelemetry(): Event<any> {
 		return this._telemetryEmitter.event;
 	}
@@ -979,8 +853,8 @@ export class BaseLanguageClient {
 		return this._stateChangeEmitter.event;
 	}
 
-	public get outputChannel(): OutputChannel | undefined {
-		if (!this._outputChannel && this.window) {
+	public get outputChannel(): OutputChannel | undefined {
+		if (!this._outputChannel && this.window && this.window.createOutputChannel) {
 			this._outputChannel = this.window.createOutputChannel(this._clientOptions.outputChannelName ? this._clientOptions.outputChannelName : this._name);
 		}
 		return this._outputChannel;
@@ -991,7 +865,7 @@ export class BaseLanguageClient {
 	}
 
 	public createDefaultErrorHandler(): ErrorHandler {
-		return new DefaultErrorHandler(this._name);
+		return new DefaultErrorHandler(this._name, this);
 	}
 
 	public set trace(value: Trace) {
@@ -1091,10 +965,8 @@ export class BaseLanguageClient {
 		this._listeners = [];
 		this._providers = [];
 		// If we restart then the diagnostics collection is reused.
-		if (!this._diagnostics) {
-			this._diagnostics = this._clientOptions.diagnosticCollectionName
-				? this.languages.createDiagnosticCollection(this._clientOptions.diagnosticCollectionName)
-				: this.languages.createDiagnosticCollection();
+		if (!this._diagnostics && this.languages.createDiagnosticCollection) {
+			this._diagnostics = this.languages.createDiagnosticCollection(this._clientOptions.diagnosticCollectionName);
 		}
 
 		this.state = ClientState.Starting;
@@ -1110,7 +982,7 @@ export class BaseLanguageClient {
 					case MessageType.Info:
 						this.info(message.message);
 						break;
-					default: {
+					default: {
 						if (this.outputChannel) {
 							this.outputChannel.appendLine(message.message);
 						}
@@ -1140,7 +1012,7 @@ export class BaseLanguageClient {
 				this.window.showMessage(MessageType.Error, `Couldn't start client ${this._name}`);
 			}
 		});
-        return Disposable.create(() => {
+		return Disposable.create(() => {
 			if (this.needsStop()) {
 				this.stop();
 			}
@@ -1154,14 +1026,84 @@ export class BaseLanguageClient {
 		return this._connectionPromise;
 	}
 
+	protected createClientCapabilities(): ClientCapabilities {
+		return {
+			workspace: {
+				...this.workspace.capabilities,
+				didChangeConfiguration: {
+					dynamicRegistration: false
+				},
+				didChangeWatchedFiles: {
+					dynamicRegistration: false
+				},
+				symbol: {
+					dynamicRegistration: true
+				},
+				executeCommand: {
+					dynamicRegistration: true
+				}
+			},
+			textDocument: {
+				synchronization: {
+					...this.workspace.synchronization,
+					dynamicRegistration: true
+				},
+				completion: {
+					...this.languages.completion,
+					dynamicRegistration: true
+				},
+				hover: {
+					dynamicRegistration: true
+				},
+				signatureHelp: {
+					dynamicRegistration: true
+				},
+				references: {
+					dynamicRegistration: true
+				},
+				documentHighlight: {
+					dynamicRegistration: true
+				},
+				documentSymbol: {
+					dynamicRegistration: true
+				},
+				formatting: {
+					dynamicRegistration: true
+				},
+				rangeFormatting: {
+					dynamicRegistration: true
+				},
+				onTypeFormatting: {
+					dynamicRegistration: true
+				},
+				definition: {
+					dynamicRegistration: true
+				},
+				codeAction: {
+					dynamicRegistration: true
+				},
+				codeLens: {
+					dynamicRegistration: true
+				},
+				documentLink: {
+					dynamicRegistration: true
+				},
+				rename: {
+					dynamicRegistration: true
+				}
+			}
+		}
+	}
+
 	private initialize(connection: IConnection): Thenable<InitializeResult> {
 		this.refreshTrace(connection, false);
 		let initOption = this._clientOptions.initializationOptions;
-        const rootPath = this.workspace && this.workspace.rootPath || null;
-        const rootUri = this.workspace && this.workspace.rootUri || null;
+		const rootPath = this.workspace && this.workspace.rootPath || null;
+		const rootUri = this.workspace && this.workspace.rootUri || null;
+		const clientCapabilities = this.createClientCapabilities();
 		let initParams: InitializeParams = {
 			processId: process.pid,
-            rootPath, rootUri,
+			rootPath, rootUri,
 			capabilities: clientCapabilities,
 			initializationOptions: is.func(initOption) ? initOption() : initOption,
 			trace: Trace.toString(this._trace)
@@ -1273,13 +1215,17 @@ export class BaseLanguageClient {
 		// unkook listeners
 		return this.resolveConnection().then(connection => {
 			return connection.shutdown().then(() => {
-				connection.exit();
-				connection.dispose();
-				this.state = ClientState.Stopped;
-				this._connectionPromise = undefined;
-				this._resolvedConnection = undefined;
+				this.handleConnectionShutdown(connection);
 			})
 		});
+	}
+
+	protected handleConnectionShutdown(connection: IConnection): void {
+		connection.exit();
+		connection.dispose();
+		this.state = ClientState.Stopped;
+		this._connectionPromise = undefined;
+		this._resolvedConnection = undefined;
 	}
 
 	private cleanUp(diagnostics: boolean = true): void {
@@ -1331,9 +1277,9 @@ export class BaseLanguageClient {
 		let closeHandler = () => {
 			this.handleConnectionClosed();
 		}
-        return this._connectionProvider().then(connection => {
-            return createConnection(connection, errorHandler, closeHandler);
-        });
+		return this.createRPCConnection().then(connection => {
+			return createConnection(connection, errorHandler, closeHandler);
+		});
 	}
 
 	private handleConnectionClosed() {
@@ -1341,6 +1287,10 @@ export class BaseLanguageClient {
 		if (this.state === ClientState.Stopping || this.state === ClientState.Stopped) {
 			return;
 		}
+		this.doHandleConnectionClosed();
+	}
+
+	protected doHandleConnectionClosed(): void {
 		this._connectionPromise = undefined;
 		this._resolvedConnection = undefined;
 		let action = this._clientOptions.errorHandler!.closed();
@@ -1365,15 +1315,15 @@ export class BaseLanguageClient {
 	}
 
 	private hookConfigurationChanged(connection: IConnection): void {
-		if (!this._clientOptions.synchronize!.configurationSection || !this.workspace) {
+		if (!this._clientOptions.synchronize!.configurationSection || !this.workspace.configurations) {
 			return;
 		}
-        this.workspace.onDidChangeConfiguration(() => this.onDidChangeConfiguration(connection), this, this._listeners);
+		this.workspace.configurations.onDidChangeConfiguration(() => this.onDidChangeConfiguration(connection), this, this._listeners);
 		this.onDidChangeConfiguration(connection);
 	}
 
 	private refreshTrace(connection: IConnection, sendNotification: boolean = false): void {
-		let config = this.workspace && this.workspace.getConfiguration(this._id);
+		let config = this.workspace && this.workspace.configurations!.getConfiguration(this._id);
 		let trace: Trace = Trace.Off;
 		if (config) {
 			trace = Trace.fromString(config.get('trace.server', 'off'));
@@ -1417,9 +1367,9 @@ export class BaseLanguageClient {
 			let index: number = key.indexOf('.');
 			let config: any = null;
 			if (index >= 0) {
-				config = this.workspace!.getConfiguration(key.substr(0, index)).get(key.substr(index + 1));
+				config = this.workspace.configurations!.getConfiguration(key.substr(0, index)).get(key.substr(index + 1));
 			} else {
-				config = this.workspace!.getConfiguration(key);
+				config = this.workspace.configurations!.getConfiguration(key);
 			}
 			if (config) {
 				let path = keys[i].split('.');
@@ -1444,7 +1394,7 @@ export class BaseLanguageClient {
 			return;
 		}
 		watchers.forEach(watcher => {
-            watcher.onFileEvent(event => this.notifyFileEvent(event), null, this._listeners);
+			watcher.onFileEvent(event => this.notifyFileEvent(event), null, this._listeners);
 		})
 	}
 
@@ -1452,102 +1402,136 @@ export class BaseLanguageClient {
 	private initRegistrationHandlers(_connection: IConnection) {
 		const syncedDocuments: Map<string, TextDocument> = new Map<string, TextDocument>();
 		const logger = (type: RPCMessageType, error: any): void => { this.logFailedRequest(type, error); };
-		if (this.workspace) {
-            this._registeredHandlers.set(
-			    DidOpenTextDocumentNotification.type.method,
-			    new DidOpenTextDocumentFeature(this, syncedDocuments)
-            );
-            this._registeredHandlers.set(
-                DidChangeTextDocumentNotification.type.method,
-                new DidChangeTextDocumentFeature(this)
-            );
-            this._registeredHandlers.set(
-                WillSaveTextDocumentNotification.type.method,
-                new DocumentNotifiactions<WillSaveTextDocumentParams, TextDocumentWillSaveEvent>(
-                    this, this.workspace.onWillSaveTextDocument, WillSaveTextDocumentNotification.type,
-                    event => event,
-                    (selectors, willSaveEvent) => DocumentNotifiactions.textDocumentFilter(this.languages, selectors, willSaveEvent.textDocument)
-                )
-            );
-            this._registeredHandlers.set(
-                WillSaveTextDocumentWaitUntilRequest.type.method,
-                new WillSaveWaitUntilFeature(this)
-            );
-            this._registeredHandlers.set(
-                DidSaveTextDocumentNotification.type.method,
-                new DidSaveTextDocumentFeature(this)
-            );
-            this._registeredHandlers.set(
-                DidCloseTextDocumentNotification.type.method,
-                new DidCloseTextDocumentFeature(this, syncedDocuments)
-            );
-        }
 		this._registeredHandlers.set(
-			CompletionRequest.type.method,
-			new LanguageFeature<CompletionRegistrationOptions>((options) => this.createCompletionProvider(options))
+			DidOpenTextDocumentNotification.type.method,
+			new DidOpenTextDocumentFeature(this, syncedDocuments)
 		);
 		this._registeredHandlers.set(
-			HoverRequest.type.method,
-			new LanguageFeature<TextDocumentRegistrationOptions>((options) => this.createHoverProvider(options))
+			DidChangeTextDocumentNotification.type.method,
+			new DidChangeTextDocumentFeature(this)
 		);
+		if (this.workspace.onWillSaveTextDocument) {
+			this._registeredHandlers.set(
+				WillSaveTextDocumentNotification.type.method,
+				new DocumentNotifiactions<WillSaveTextDocumentParams, TextDocumentWillSaveEvent>(
+					this, this.workspace.onWillSaveTextDocument, WillSaveTextDocumentNotification.type,
+					event => event,
+					(selectors, willSaveEvent) => DocumentNotifiactions.textDocumentFilter(this.languages, selectors, willSaveEvent.textDocument)
+				)
+			);
+			if (!!this.workspace.synchronization && this.workspace.synchronization.willSaveWaitUntil) {
+				this._registeredHandlers.set(
+					WillSaveTextDocumentWaitUntilRequest.type.method,
+					new WillSaveWaitUntilFeature(this)
+				);
+			}
+		}
+		if (this.workspace.onDidSaveTextDocument) {
+			this._registeredHandlers.set(
+				DidSaveTextDocumentNotification.type.method,
+				new DidSaveTextDocumentFeature(this)
+			);
+		}
 		this._registeredHandlers.set(
-			SignatureHelpRequest.type.method,
-			new LanguageFeature<SignatureHelpRegistrationOptions>((options) => this.createSignatureHelpProvider(options))
+			DidCloseTextDocumentNotification.type.method,
+			new DidCloseTextDocumentFeature(this, syncedDocuments)
 		);
-		this._registeredHandlers.set(
-			DefinitionRequest.type.method,
-			new LanguageFeature<TextDocumentRegistrationOptions>((options) => this.createDefinitionProvider(options))
-		);
-		this._registeredHandlers.set(
-			ReferencesRequest.type.method,
-			new LanguageFeature<TextDocumentRegistrationOptions>((options) => this.createReferencesProvider(options))
-		);
-		this._registeredHandlers.set(
-			DocumentHighlightRequest.type.method,
-			new LanguageFeature<TextDocumentRegistrationOptions>((options) => this.createDocumentHighlightProvider(options))
-		);
-		this._registeredHandlers.set(
-			DocumentSymbolRequest.type.method,
-			new LanguageFeature<TextDocumentRegistrationOptions>((options) => this.createDocumentSymbolProvider(options))
-		);
-		this._registeredHandlers.set(
-			WorkspaceSymbolRequest.type.method,
-			new LanguageFeature<TextDocumentRegistrationOptions>((options) => this.createWorkspaceSymbolProvider(options))
-		);
-		this._registeredHandlers.set(
-			CodeActionRequest.type.method,
-			new LanguageFeature<TextDocumentRegistrationOptions>((options) => this.createCodeActionsProvider(options))
-		);
-		this._registeredHandlers.set(
-			CodeLensRequest.type.method,
-			new LanguageFeature<CodeLensRegistrationOptions>((options) => this.createCodeLensProvider(options))
-		);
-		this._registeredHandlers.set(
-			DocumentFormattingRequest.type.method,
-			new LanguageFeature<TextDocumentRegistrationOptions>((options) => this.createDocumentFormattingProvider(options))
-		);
-		this._registeredHandlers.set(
-			DocumentRangeFormattingRequest.type.method,
-			new LanguageFeature<TextDocumentRegistrationOptions>((options) => this.createDocumentRangeFormattingProvider(options))
-		);
-		this._registeredHandlers.set(
-			DocumentOnTypeFormattingRequest.type.method,
-			new LanguageFeature<DocumentOnTypeFormattingRegistrationOptions>((options) => this.createDocumentOnTypeFormattingProvider(options))
-		);
-		this._registeredHandlers.set(
-			RenameRequest.type.method,
-			new LanguageFeature<TextDocumentRegistrationOptions>((options) => this.createRenameProvider(options))
-		);
-		this._registeredHandlers.set(
-			DocumentLinkRequest.type.method,
-			new LanguageFeature<DocumentLinkRegistrationOptions>((options) => this.createDocumentLinkProvider(options))
-		);
-        if (this.commands) {
-            this._registeredHandlers.set(
-                ExecuteCommandRequest.type.method,
-                new ExecuteCommandFeature(this, logger)
-            );
-        }
+		if (!this.languages.registerCompletionItemProvider) {
+			this._registeredHandlers.set(
+				CompletionRequest.type.method,
+				new LanguageFeature<CompletionRegistrationOptions>((options) => this.createCompletionProvider(options))
+			);
+		}
+		if (!this.languages.registerHoverProvider) {
+			this._registeredHandlers.set(
+				HoverRequest.type.method,
+				new LanguageFeature<TextDocumentRegistrationOptions>((options) => this.createHoverProvider(options))
+			);
+		}
+		if (!this.languages.registerSignatureHelpProvider) {
+			this._registeredHandlers.set(
+				SignatureHelpRequest.type.method,
+				new LanguageFeature<SignatureHelpRegistrationOptions>((options) => this.createSignatureHelpProvider(options))
+			);
+		}
+		if (!this.languages.registerDefinitionProvider) {
+			this._registeredHandlers.set(
+				DefinitionRequest.type.method,
+				new LanguageFeature<TextDocumentRegistrationOptions>((options) => this.createDefinitionProvider(options))
+			);
+		}
+		if (!this.languages.registerReferenceProvider) {
+			this._registeredHandlers.set(
+				ReferencesRequest.type.method,
+				new LanguageFeature<TextDocumentRegistrationOptions>((options) => this.createReferencesProvider(options))
+			);
+		}
+		if (!this.languages.registerDocumentHighlightProvider) {
+			this._registeredHandlers.set(
+				DocumentHighlightRequest.type.method,
+				new LanguageFeature<TextDocumentRegistrationOptions>((options) => this.createDocumentHighlightProvider(options))
+			);
+		}
+		if (!this.languages.registerDocumentSymbolProvider) {
+			this._registeredHandlers.set(
+				DocumentSymbolRequest.type.method,
+				new LanguageFeature<TextDocumentRegistrationOptions>((options) => this.createDocumentSymbolProvider(options))
+			);
+		}
+		if (!this.languages.registerWorkspaceSymbolProvider) {
+			this._registeredHandlers.set(
+				WorkspaceSymbolRequest.type.method,
+				new LanguageFeature<TextDocumentRegistrationOptions>((options) => this.createWorkspaceSymbolProvider(options))
+			);
+		}
+		if (!this.languages.registerCodeActionsProvider) {
+			this._registeredHandlers.set(
+				CodeActionRequest.type.method,
+				new LanguageFeature<TextDocumentRegistrationOptions>((options) => this.createCodeActionsProvider(options))
+			);
+		}
+		if (!this.languages.registerCodeLensProvider) {
+			this._registeredHandlers.set(
+				CodeLensRequest.type.method,
+				new LanguageFeature<CodeLensRegistrationOptions>((options) => this.createCodeLensProvider(options))
+			);
+		}
+		if (!this.languages.registerDocumentFormattingEditProvider) {
+			this._registeredHandlers.set(
+				DocumentFormattingRequest.type.method,
+				new LanguageFeature<TextDocumentRegistrationOptions>((options) => this.createDocumentFormattingProvider(options))
+			);
+		}
+		if (!this.languages.registerDocumentRangeFormattingEditProvider) {
+			this._registeredHandlers.set(
+				DocumentRangeFormattingRequest.type.method,
+				new LanguageFeature<TextDocumentRegistrationOptions>((options) => this.createDocumentRangeFormattingProvider(options))
+			);
+		}
+		if (!this.languages.registerOnTypeFormattingEditProvider) {
+			this._registeredHandlers.set(
+				DocumentOnTypeFormattingRequest.type.method,
+				new LanguageFeature<DocumentOnTypeFormattingRegistrationOptions>((options) => this.createDocumentOnTypeFormattingProvider(options))
+			);
+		}
+		if (!this.languages.registerRenameProvider) {
+			this._registeredHandlers.set(
+				RenameRequest.type.method,
+				new LanguageFeature<TextDocumentRegistrationOptions>((options) => this.createRenameProvider(options))
+			);
+		}
+		if (!this.languages.registerDocumentLinkProvider) {
+			this._registeredHandlers.set(
+				DocumentLinkRequest.type.method,
+				new LanguageFeature<DocumentLinkRegistrationOptions>((options) => this.createDocumentLinkProvider(options))
+			);
+		}
+		if (this.commands) {
+			this._registeredHandlers.set(
+				ExecuteCommandRequest.type.method,
+				new ExecuteCommandFeature(this, logger)
+			);
+		}
 	}
 
 	private handleRegistrationRequest(params: RegistrationParams): Thenable<void> {
@@ -1581,9 +1565,9 @@ export class BaseLanguageClient {
 	}
 
 	private handleApplyWorkspaceEdit(params: ApplyWorkspaceEditParams): Thenable<ApplyWorkspaceEditResponse> {
-        if (!this.workspace) {
-            return Promise.resolve({ applied: false });
-        }
+		if (!this.workspace.applyEdit) {
+			return Promise.resolve({ applied: false });
+		}
 		// This is some sort of workaround since the version check should be done by VS Code in the Workspace.applyEdit.
 		// However doing it here adds some safety since the server can lag more behind then an extension.
 		let workspaceEdit: WorkspaceEdit = params.edit;
@@ -1722,249 +1706,112 @@ export class BaseLanguageClient {
 		this.error(`Request ${type.method} failed.`, error);
 	}
 
+	protected createRequestHandler<P, R, E, RO>(type: RequestType<P, R, E, RO>, onError?: (param: P, error: ResponseError<E>) => R | null | Error): (params: P, token: CancellationToken) => Thenable<R> {
+		return (params, token) => {
+			return this.sendRequest(type, params, token).then(
+				(result) => result,
+				(error: ResponseError<E>) => {
+					this.logFailedRequest(type, error);
+					const result = onError ? onError(params, error) : null;
+					return Promise.resolve(result);
+				}
+			);
+		}
+	}
+
 	private createCompletionProvider(options: CompletionRegistrationOptions): Disposable {
 		let triggerCharacters = options.triggerCharacters || [];
-        return this.languages.registerCompletionItemProvider(options.documentSelector!, {
-			provideCompletionItems: (textDocument, position, token): Thenable<CompletionList | CompletionItem[]> => {
-				return this.sendRequest(CompletionRequest.type, {textDocument, position}, token).then(
-					(result) => result,
-					(error) => {
-						this.logFailedRequest(CompletionRequest.type, error);
-						return Promise.resolve([]);
-					}
-				);
-			},
-			resolveCompletionItem: options.resolveProvider
-				? (item, token): Thenable<CompletionItem> => {
-					return this.sendRequest(CompletionResolveRequest.type, item, token).then(
-						(result) => result,
-						(error) => {
-							this.logFailedRequest(CompletionResolveRequest.type, error);
-							return Promise.resolve(item);
-						}
-					);
-				}
-				: undefined
+		return this.languages.registerCompletionItemProvider!(options.documentSelector!, {
+			provideCompletionItems: this.createRequestHandler(CompletionRequest.type, () => []),
+			resolveCompletionItem: options.resolveProvider ? this.createRequestHandler(CompletionResolveRequest.type, (params) => params) : undefined
 		}, ...triggerCharacters);
 	}
 
 	private createHoverProvider(options: TextDocumentRegistrationOptions): Disposable {
-		return this.languages.registerHoverProvider(options.documentSelector!, {
-			provideHover: (textDocument, position, token): Thenable<Hover> => {
-				return this.sendRequest(HoverRequest.type, {textDocument, position}, token).then(
-					(result) => result,
-					(error) => {
-						this.logFailedRequest(HoverRequest.type, error);
-						return Promise.resolve(null);
-					}
-				);
-			}
+		return this.languages.registerHoverProvider!(options.documentSelector!, {
+			provideHover: this.createRequestHandler(HoverRequest.type)
 		});
 	}
 
 	private createSignatureHelpProvider(options: SignatureHelpRegistrationOptions): Disposable {
 		let triggerCharacters = options.triggerCharacters || [];
-		return this.languages.registerSignatureHelpProvider(options.documentSelector!, {
-			provideSignatureHelp: (textDocument, position, token): Thenable<SignatureHelp> => {
-				return this.sendRequest(SignatureHelpRequest.type, {textDocument, position}, token).then(
-					(result) => result,
-					(error) => {
-						this.logFailedRequest(SignatureHelpRequest.type, error);
-						return Promise.resolve(null);
-					}
-				);
-			}
+		return this.languages.registerSignatureHelpProvider!(options.documentSelector!, {
+			provideSignatureHelp: this.createRequestHandler(SignatureHelpRequest.type)
 		}, ...triggerCharacters);
 	}
 
 	private createDefinitionProvider(options: TextDocumentRegistrationOptions): Disposable {
-		return this.languages.registerDefinitionProvider(options.documentSelector!, {
-			provideDefinition: (textDocument, position, token): Thenable<Definition> => {
-				return this.sendRequest(DefinitionRequest.type, {textDocument, position}, token).then(
-					(result) => result,
-					(error) => {
-						this.logFailedRequest(DefinitionRequest.type, error);
-						return Promise.resolve(null);
-					}
-				);
-			}
+		return this.languages.registerDefinitionProvider!(options.documentSelector!, {
+			provideDefinition: this.createRequestHandler(DefinitionRequest.type)
 		});
 	}
 
 	private createReferencesProvider(options: TextDocumentRegistrationOptions): Disposable {
-		return this.languages.registerReferenceProvider(options.documentSelector!, {
-			provideReferences: (textDocument, position, context, token): Thenable<Location[]> => {
-				return this.sendRequest(ReferencesRequest.type, {textDocument, position, context}, token).then(
-					(result) => result,
-					(error) => {
-						this.logFailedRequest(ReferencesRequest.type, error);
-						return Promise.resolve([]);
-					}
-				);
-			}
+		return this.languages.registerReferenceProvider!(options.documentSelector!, {
+			provideReferences: this.createRequestHandler(ReferencesRequest.type, () => [])
 		});
 	}
 
 	private createDocumentHighlightProvider(options: TextDocumentRegistrationOptions): Disposable {
-		return this.languages.registerDocumentHighlightProvider(options.documentSelector!, {
-			provideDocumentHighlights: (textDocument, position, token): Thenable<DocumentHighlight[]> => {
-				return this.sendRequest(DocumentHighlightRequest.type, {textDocument, position}, token).then(
-					(result) => result,
-					(error) => {
-						this.logFailedRequest(DocumentHighlightRequest.type, error);
-						return Promise.resolve([]);
-					}
-				);
-			}
+		return this.languages.registerDocumentHighlightProvider!(options.documentSelector!, {
+			provideDocumentHighlights: this.createRequestHandler(DocumentHighlightRequest.type, () => [])
 		});
 	}
 
 	private createDocumentSymbolProvider(options: TextDocumentRegistrationOptions): Disposable {
-		return this.languages.registerDocumentSymbolProvider(options.documentSelector!, {
-			provideDocumentSymbols: (textDocument, token): Thenable<SymbolInformation[]> => {
-				return this.sendRequest(DocumentSymbolRequest.type, {textDocument}, token).then(
-					(result) => result,
-					(error) => {
-						this.logFailedRequest(DocumentSymbolRequest.type, error);
-						return Promise.resolve([]);
-					}
-				);
-			}
+		return this.languages.registerDocumentSymbolProvider!(options.documentSelector!, {
+			provideDocumentSymbols: this.createRequestHandler(DocumentSymbolRequest.type, () => [])
 		});
 	}
 
 	private createWorkspaceSymbolProvider(_options: TextDocumentRegistrationOptions): Disposable {
-		return this.languages.registerWorkspaceSymbolProvider({
-			provideWorkspaceSymbols: (query, token): Thenable<SymbolInformation[]> => {
-				return this.sendRequest(WorkspaceSymbolRequest.type, { query }, token).then(
-					(result) => result,
-					(error) => {
-						this.logFailedRequest(WorkspaceSymbolRequest.type, error);
-						return Promise.resolve([]);
-					}
-				);
-			}
+		return this.languages.registerWorkspaceSymbolProvider!({
+			provideWorkspaceSymbols: this.createRequestHandler(WorkspaceSymbolRequest.type, () => [])
 		});
 	}
 
 	private createCodeActionsProvider(options: TextDocumentRegistrationOptions): Disposable {
-		return this.languages.registerCodeActionsProvider(options.documentSelector!, {
-			provideCodeActions: (textDocument, range, context, token): Thenable<Command[]> => {
-				return this.sendRequest(CodeActionRequest.type, {textDocument, range, context}, token).then(
-					(result) => result,
-					(error) => {
-						this.logFailedRequest(CodeActionRequest.type, error);
-						return Promise.resolve([]);
-					}
-				);
-			}
+		return this.languages.registerCodeActionsProvider!(options.documentSelector!, {
+			provideCodeActions: this.createRequestHandler(CodeActionRequest.type, () => [])
 		});
 	}
 
 	private createCodeLensProvider(options: CodeLensRegistrationOptions): Disposable {
-		return this.languages.registerCodeLensProvider(options.documentSelector!, {
-			provideCodeLenses: (textDocument, token): Thenable<CodeLens[]> => {
-				return this.sendRequest(CodeLensRequest.type, {textDocument}, token).then(
-					(result) => result,
-					(error) => {
-						this.logFailedRequest(CodeLensRequest.type, error);
-						return Promise.resolve([]);
-					}
-				);
-			},
-			resolveCodeLens: (options.resolveProvider)
-				? (codeLens, token): Thenable<CodeLens> => {
-					return this.sendRequest(CodeLensResolveRequest.type, codeLens, token).then(
-						(result) => result,
-						(error) => {
-							this.logFailedRequest(CodeLensResolveRequest.type, error);
-							return codeLens;
-						}
-					);
-				}
-				: undefined
+		return this.languages.registerCodeLensProvider!(options.documentSelector!, {
+			provideCodeLenses: this.createRequestHandler(CodeLensRequest.type, () => []),
+			resolveCodeLens: options.resolveProvider ? this.createRequestHandler(CodeLensResolveRequest.type, (params) => params) : undefined
 		});
 	}
 
 	private createDocumentFormattingProvider(options: TextDocumentRegistrationOptions): Disposable {
-		return this.languages.registerDocumentFormattingEditProvider(options.documentSelector!, {
-			provideDocumentFormattingEdits: (textDocument, options, token): Thenable<TextEdit[]> => {
-				return this.sendRequest(DocumentFormattingRequest.type, {textDocument, options}, token).then(
-					(result) => result,
-					(error) => {
-						this.logFailedRequest(DocumentFormattingRequest.type, error);
-						return Promise.resolve([]);
-					}
-				);
-			}
+		return this.languages.registerDocumentFormattingEditProvider!(options.documentSelector!, {
+			provideDocumentFormattingEdits: this.createRequestHandler(DocumentFormattingRequest.type, () => [])
 		});
 	}
 
 	private createDocumentRangeFormattingProvider(options: TextDocumentRegistrationOptions): Disposable {
-		return this.languages.registerDocumentRangeFormattingEditProvider(options.documentSelector!, {
-			provideDocumentRangeFormattingEdits: (textDocument, range, options, token): Thenable<TextEdit[]> => {
-				return this.sendRequest(DocumentRangeFormattingRequest.type, {textDocument, range, options}, token).then(
-					(result) => result,
-					(error) => {
-						this.logFailedRequest(DocumentRangeFormattingRequest.type, error);
-						return Promise.resolve([]);
-					}
-				);
-			}
+		return this.languages.registerDocumentRangeFormattingEditProvider!(options.documentSelector!, {
+			provideDocumentRangeFormattingEdits: this.createRequestHandler(DocumentRangeFormattingRequest.type, () => [])
 		});
 	}
 
 	private createDocumentOnTypeFormattingProvider(options: DocumentOnTypeFormattingRegistrationOptions): Disposable {
 		let moreTriggerCharacter = options.moreTriggerCharacter || [];
-		return this.languages.registerOnTypeFormattingEditProvider(options.documentSelector!, {
-			provideOnTypeFormattingEdits: (textDocument, position, ch, options, token): Thenable<TextEdit[]> => {
-				return this.sendRequest(DocumentOnTypeFormattingRequest.type, {textDocument, position, ch, options}, token).then(
-					(result) => result,
-					(error) => {
-						this.logFailedRequest(DocumentOnTypeFormattingRequest.type, error);
-						return Promise.resolve([]);
-					}
-				);
-			}
+		return this.languages.registerOnTypeFormattingEditProvider!(options.documentSelector!, {
+			provideOnTypeFormattingEdits: this.createRequestHandler(DocumentOnTypeFormattingRequest.type, () => [])
 		}, options.firstTriggerCharacter, ...moreTriggerCharacter);
 	}
 
 	private createRenameProvider(options: TextDocumentRegistrationOptions): Disposable {
-		return this.languages.registerRenameProvider(options.documentSelector!, {
-			provideRenameEdits: (textDocument, position, newName, token): Thenable<WorkspaceEdit> => {
-				return this.sendRequest(RenameRequest.type, {textDocument, position, newName}, token).then(
-					(result) => result,
-					(error: ResponseError<void>) => {
-						this.logFailedRequest(RenameRequest.type, error);
-						Promise.resolve(new Error(error.message));
-					}
-				)
-			}
+		return this.languages.registerRenameProvider!(options.documentSelector!, {
+			provideRenameEdits: this.createRequestHandler(RenameRequest.type, (_, error) => new Error(error.message))
 		});
 	}
 
 	private createDocumentLinkProvider(options: DocumentLinkRegistrationOptions): Disposable {
-		return this.languages.registerDocumentLinkProvider(options.documentSelector!, {
-			provideDocumentLinks: (textDocument, token): Thenable<DocumentLink[]> => {
-				return this.sendRequest(DocumentLinkRequest.type, {textDocument}, token).then(
-					(result) => result,
-					(error: ResponseError<void>) => {
-						this.logFailedRequest(DocumentLinkRequest.type, error);
-						Promise.resolve(new Error(error.message));
-					}
-				)
-			},
-			resolveDocumentLink: options.resolveProvider
-				? (link, token): Thenable<DocumentLink> => {
-					return this.sendRequest(DocumentLinkResolveRequest.type, link, token).then(
-						(result) => result,
-						(error: ResponseError<void>) => {
-							this.logFailedRequest(DocumentLinkResolveRequest.type, error);
-							Promise.resolve(new Error(error.message));
-						}
-					)
-				}
-				: undefined
+		return this.languages.registerDocumentLinkProvider!(options.documentSelector!, {
+			provideDocumentLinks: this.createRequestHandler(DocumentLinkRequest.type, (_, error) => new Error(error.message)),
+			resolveDocumentLink: options.resolveProvider ? this.createRequestHandler(DocumentLinkResolveRequest.type, (_, error) => new Error(error.message)) : undefined
 		});
 	}
 }
@@ -1978,23 +1825,23 @@ export class SettingMonitor {
 	}
 
 	public start(): Disposable {
-        if (this._client.workspace) {
-            this._client.workspace.onDidChangeConfiguration(this.onDidChangeConfiguration, this, this._listeners);
-            this.onDidChangeConfiguration();
-        }
-        return Disposable.create(() => {
-            if (this._client.needsStop()) {
-                this._client.stop();
-            }
-        });
+		if (this._client.workspace.configurations) {
+			this._client.workspace.configurations.onDidChangeConfiguration(this.onDidChangeConfiguration, this, this._listeners);
+			this.onDidChangeConfiguration();
+		}
+		return Disposable.create(() => {
+			if (this._client.needsStop()) {
+				this._client.stop();
+			}
+		});
 	}
 
 	private onDidChangeConfiguration(): void {
-        const workspace = this._client.workspace!;
+		const configurations = this._client.workspace.configurations!;
 		let index = this._setting.indexOf('.');
 		let primary = index >= 0 ? this._setting.substr(0, index) : this._setting;
 		let rest = index >= 0 ? this._setting.substr(index + 1) : undefined;
-		let enabled = rest ? workspace.getConfiguration(primary).get(rest, false) : workspace.getConfiguration(primary);
+		let enabled = rest ? configurations.getConfiguration(primary).get(rest, false) : configurations.getConfiguration(primary);
 		if (enabled && this._client.needsStart()) {
 			this._client.start();
 		} else if (!enabled && this._client.needsStop()) {
