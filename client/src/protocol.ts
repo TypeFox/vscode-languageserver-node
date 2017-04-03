@@ -203,6 +203,53 @@ export interface WorkspaceClientCapabilites {
 	};
 }
 
+export interface SynchronizationClientCapabilities {
+	/**
+	 * Whether text document synchronization supports dynamic registration.
+	 */
+	dynamicRegistration?: boolean;
+
+	/**
+	 * The client supports sending will save notifications.
+	 */
+	willSave?: boolean;
+
+	/**
+	 * The client supports sending a will save request and
+	 * waits for a response providing text edits which will
+	 * be applied to the document before it is saved.
+	 */
+	willSaveWaitUntil?: boolean;
+
+	/**
+	 * The client supports did save notifications.
+	 */
+	didSave?: boolean;
+}
+
+export interface CompletionClientCapabilities {
+	/**
+	 * Whether completion supports dynamic registration.
+	 */
+	dynamicRegistration?: boolean;
+
+	/**
+	 * The client supports the following `CompletionItem` specific
+	 * capabilities.
+	 */
+	completionItem?: {
+		/**
+		 * Client supports snippets as insert text.
+		 *
+		 * A snippet can define tab stops and placeholders with `$1`, `$2`
+		 * and `${3:foo}`. `$0` defines the final tab stop, it defaults to
+		 * the end of the snippet. Placeholders with equal identifiers are linked,
+		 * that is typing in one will update others too.
+		 */
+		snippetSupport?: boolean;
+	}
+};
+
 /**
  * Text document specific client capabilities.
  */
@@ -211,55 +258,12 @@ export interface TextDocumentClientCapabilities {
 	/**
 	 * Defines which synchronization capabilities the client supports.
 	 */
-	synchronization?: {
-		/**
-		 * Whether text document synchronization supports dynamic registration.
-		 */
-		dynamicRegistration?: boolean;
-
-		/**
-		 * The client supports sending will save notifications.
-		 */
-		willSave?: boolean;
-
-		/**
-		 * The client supports sending a will save request and
-		 * waits for a response providing text edits which will
-		 * be applied to the document before it is saved.
-		 */
-		willSaveWaitUntil?: boolean;
-
-		/**
-		 * The client supports did save notifications.
-		 */
-		didSave?: boolean;
-	}
+	synchronization?: SynchronizationClientCapabilities;
 
 	/**
 	 * Capabilities specific to the `textDocument/completion`
 	 */
-	completion?: {
-		/**
-		 * Whether completion supports dynamic registration.
-		 */
-		dynamicRegistration?: boolean;
-
-		/**
-		 * The client supports the following `CompletionItem` specific
-		 * capabilities.
-		 */
-		completionItem?: {
-			/**
-			 * Client supports snippets as insert text.
-			 *
-			 * A snippet can define tab stops and placeholders with `$1`, `$2`
-			 * and `${3:foo}`. `$0` defines the final tab stop, it defaults to
-			 * the end of the snippet. Placeholders with equal identifiers are linked,
-			 * that is typing in one will update others too.
-			 */
-			snippetSupport?: boolean;
-		}
-	};
+	completion?: CompletionClientCapabilities;
 
 	/**
 	 * Capabilities specific to the `textDocument/hover`
