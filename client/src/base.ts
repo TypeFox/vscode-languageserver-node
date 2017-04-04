@@ -260,7 +260,7 @@ export enum RevealOutputChannelOn {
 	Never = 4
 }
 
-export interface LanguageClientOptions {
+export interface BaseLanguageClientOptions {
 	documentSelector?: DocumentSelector | string[];
 	synchronize?: SynchronizeOptions;
 	diagnosticCollectionName?: string;
@@ -719,7 +719,7 @@ export abstract class BaseLanguageClient {
 	private _trace: Trace;
 	private _tracer: Tracer;
 
-	constructor(private _id: string, private _name: string, clientOptions: LanguageClientOptions) {
+	constructor(private _id: string, private _name: string, clientOptions: BaseLanguageClientOptions) {
 		this._clientOptions = {
 			...clientOptions,
 			documentSelector: clientOptions.documentSelector || [],
