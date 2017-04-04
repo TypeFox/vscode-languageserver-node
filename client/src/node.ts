@@ -111,7 +111,15 @@ export interface NodeLanguageClientOptions extends BaseLanguageClientOptions {
 	stdioEncoding?: string;
 }
 
-export abstract class NodeLanguageClient extends BaseLanguageClient {
+export namespace NodeLanguageClient {
+	export interface IOptions extends BaseLanguageClient.IOptions {
+		serverOptions: ServerOptions;
+		clientOptions: NodeLanguageClientOptions;
+		forceDebug?: boolean;
+	}
+}
+
+export class NodeLanguageClient extends BaseLanguageClient {
 
 	private _serverOptions: ServerOptions;
 	private _forceDebug: boolean;
@@ -119,13 +127,13 @@ export abstract class NodeLanguageClient extends BaseLanguageClient {
 
 	private _childProcess: ChildProcess | undefined;
 
-	public constructor(id: string, name: string, serverOptions: ServerOptions, clientOptions: NodeLanguageClientOptions, forceDebug?: boolean) {
-		super(id, name, clientOptions);
-		this._serverOptions = serverOptions;
+	public constructor(options: NodeLanguageClient.IOptions) {
+		super(options);
+		this._serverOptions = options.serverOptions;
 
-		clientOptions = clientOptions || {};
+		const clientOptions = options.clientOptions || {};
 		this._encoding = clientOptions.stdioEncoding || 'utf8';
-		this._forceDebug = forceDebug === void 0 ? false : forceDebug;
+		this._forceDebug = options.forceDebug === void 0 ? false : options.forceDebug;
 		this._childProcess = undefined;
 	}
 

@@ -5,12 +5,8 @@
 'use strict';
 
 import {
-	NodeLanguageClient, NodeLanguageClientOptions, ServerOptions
+	NodeLanguageClient, NodeLanguageClientOptions, ServerOptions, BaseLanguageClient
 } from './node';
-
-import {
-	Languages, Workspace, Commands, Window
-} from './services';
 
 import {
 	createLanguages, createWorkspace, createCommands, createWindow
@@ -48,28 +44,38 @@ function getClientOptions(arg2: ServerOptions | string, arg3: LanguageClientOpti
 function getForceDebug(arg2: ServerOptions | string, arg4?: boolean | LanguageClientOptions, arg5?: boolean) {
 	return (is.string(arg2) ? !!arg5 : arg4 as boolean);
 }
+function getServices(clientOptions: LanguageClientOptions): BaseLanguageClient.IServices {
+	const _c2p = c2p.createConverter(clientOptions.uriConverters ? clientOptions.uriConverters.code2Protocol : undefined);
+	const _p2c = p2c.createConverter(clientOptions.uriConverters ? clientOptions.uriConverters.protocol2Code : undefined);
+	return {
+		languages: createLanguages(_p2c, _c2p),
+		workspace: createWorkspace(_c2p),
+		commands: createCommands(),
+		window: createWindow()
+	}
+} 
+function createOptions(arg1: string, arg2: ServerOptions | string, arg3: LanguageClientOptions | ServerOptions, arg4?: boolean | LanguageClientOptions, arg5?: boolean): NodeLanguageClient.IOptions {
+	const id = getId(arg1, arg2);
+	const name = getName(arg1, arg2)
+	const serverOptions = getServerOptions(arg2, arg3);
+	const clientOptions = getClientOptions(arg2, arg3, arg4);
+	const services = getServices(clientOptions);
+	const forceDebug = getForceDebug(arg2, arg4, arg5);
+	return { id, name, serverOptions, clientOptions, services, forceDebug };
+}
 
 export class LanguageClient extends NodeLanguageClient {
 
 	private _c2p: c2p.Converter;
 	private _p2c: p2c.Converter;
 
-	readonly languages: Languages;
-	readonly workspace: Workspace;
-	readonly commands: Commands;
-	readonly window: Window;
-
 	public constructor(name: string, serverOptions: ServerOptions, clientOptions: LanguageClientOptions, forceDebug?: boolean);
 	public constructor(id: string, name: string, serverOptions: ServerOptions, clientOptions: LanguageClientOptions, forceDebug?: boolean);
 	public constructor(arg1: string, arg2: ServerOptions | string, arg3: LanguageClientOptions | ServerOptions, arg4?: boolean | LanguageClientOptions, arg5?: boolean) {
-		super(getId(arg1, arg2), getName(arg1, arg2), getServerOptions(arg2, arg3), getClientOptions(arg2, arg3, arg4), getForceDebug(arg2, arg4, arg5));
+		super(createOptions(arg1, arg2, arg3, arg4, arg5));
 		const clientOptions = getClientOptions(arg2, arg3, arg4) || {};
 		this._c2p = c2p.createConverter(clientOptions.uriConverters ? clientOptions.uriConverters.code2Protocol : undefined);
 		this._p2c = p2c.createConverter(clientOptions.uriConverters ? clientOptions.uriConverters.protocol2Code : undefined);
-		this.languages = createLanguages(this._p2c, this._c2p);
-		this.workspace = createWorkspace(this._c2p);
-		this.commands = createCommands();
-		this.window = createWindow();
 	}
 
 	public get protocol2CodeConverter(): p2c.Converter {

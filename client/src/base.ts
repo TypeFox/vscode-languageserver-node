@@ -694,8 +694,25 @@ interface FeatureHandlerMap extends Map<string, FeatureHandler<any>> {
 	get(key: string): FeatureHandler<any>;
 }
 
+export namespace BaseLanguageClient {
+	export interface IServices {
+		languages: Languages;
+		workspace: Workspace;
+		commands?: Commands;
+		window?: Window;
+	}
+	export interface IOptions {
+		name: string;
+		id?: string;
+		clientOptions: BaseLanguageClientOptions;
+		services: IServices;
+	}
+}
+
 export abstract class BaseLanguageClient {
 
+	private _id: string;
+	private _name: string
 	private _clientOptions: ResolvedClientOptions;
 
 	private _state: ClientState;
@@ -719,7 +736,19 @@ export abstract class BaseLanguageClient {
 	private _trace: Trace;
 	private _tracer: Tracer;
 
-	constructor(private _id: string, private _name: string, clientOptions: BaseLanguageClientOptions) {
+	readonly languages: Languages;
+	readonly workspace: Workspace;
+	readonly commands?: Commands;
+	readonly window?: Window;
+
+	constructor(options: BaseLanguageClient.IOptions) {
+		this._name = options.name;
+		this._id = options.id || options.name.toLowerCase();
+		this.languages = options.services.languages;
+		this.workspace = options.services.workspace;
+		this.commands = options.services.commands;
+		this.window = options.services.window;
+		const clientOptions = options.clientOptions;
 		this._clientOptions = {
 			...clientOptions,
 			documentSelector: clientOptions.documentSelector || [],
@@ -752,11 +781,6 @@ export abstract class BaseLanguageClient {
 			}
 		};
 	}
-
-	abstract readonly languages: Languages;
-	abstract readonly workspace: Workspace;
-	abstract readonly commands?: Commands;
-	abstract readonly window?: Window;
 
 	protected abstract createRPCConnection(): Thenable<MessageConnection>;
 
