@@ -94,7 +94,7 @@ export interface DocumentLinkProvider {
 
 export interface Languages {
 	readonly completion?: CompletionClientCapabilities;
-	match(selector: DocumentSelector, document: {uri: string, languageId: string}): number;
+	match(selector: DocumentSelector, document: {uri: string, languageId: string}): boolean;
     createDiagnosticCollection?(name?: string): DiagnosticCollection;
 	registerCompletionItemProvider?(selector: DocumentSelector, provider: CompletionItemProvider, ...triggerCharacters: string[]): Disposable;
 	registerHoverProvider?(selector: DocumentSelector, provider: HoverProvider): Disposable;

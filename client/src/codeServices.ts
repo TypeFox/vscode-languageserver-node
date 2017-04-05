@@ -74,14 +74,14 @@ export function createWorkspace(c2p: C2PConverter): services.Workspace {
 
 export function createLanguages(p2c: P2CConverter, c2p: C2PConverter): services.Languages {
 
-    function match(selector: proto.DocumentSelector, document: { uri: string, languageId: string }): number {
+    function match(selector: proto.DocumentSelector, document: { uri: string, languageId: string }): boolean {
         const uri = p2c.asUri(document.uri);
         const codeDocument = <code.TextDocument>{
             uri,
             fileName: uri.fsPath,
             languageId: document.languageId
         }
-        return code.languages.match(selector, codeDocument);
+        return code.languages.match(selector, codeDocument) != 0;
     }
 
     function createDiagnosticCollection(name?: string): services.DiagnosticCollection {
