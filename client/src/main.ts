@@ -5,8 +5,9 @@
 'use strict';
 
 import {
-	NodeLanguageClient, NodeLanguageClientOptions, ServerOptions, BaseLanguageClient
-} from './node';
+	BaseLanguageClient
+} from './base';
+import { NodeConnectionProvider, ServerOptions } from './nodeConnection';
 
 import {
 	createLanguages, createWorkspace, createCommands, createWindow
@@ -20,9 +21,15 @@ export { Converter as Code2ProtocolConverter } from './codeConverter';
 export { Converter as Protocol2CodeConverter } from './protocolConverter';
 
 export * from 'vscode-languageserver-types';
-export * from './node';
+export * from './base';
+export { ServerOptions } from './nodeConnection';
 
-export interface LanguageClientOptions extends NodeLanguageClientOptions {
+export interface LanguageClientOptions extends BaseLanguageClient.IOptions {
+	/**
+	 * The encoding use to read stdout and stderr. Defaults
+	 * to 'utf8' if ommitted.
+	 */
+	stdioEncoding?: string;
 	uriConverters?: {
 		code2Protocol: c2p.URIConverter,
 		protocol2Code: p2c.URIConverter
@@ -54,17 +61,20 @@ function getServices(clientOptions: LanguageClientOptions): BaseLanguageClient.I
 		window: createWindow()
 	}
 } 
-function createOptions(arg1: string, arg2: ServerOptions | string, arg3: LanguageClientOptions | ServerOptions, arg4?: boolean | LanguageClientOptions, arg5?: boolean): NodeLanguageClient.IOptions {
+function createOptions(arg1: string, arg2: ServerOptions | string, arg3: LanguageClientOptions | ServerOptions, arg4?: boolean | LanguageClientOptions, arg5?: boolean): BaseLanguageClient.IOptions {
 	const id = getId(arg1, arg2);
 	const name = getName(arg1, arg2)
 	const serverOptions = getServerOptions(arg2, arg3);
 	const clientOptions = getClientOptions(arg2, arg3, arg4);
 	const services = getServices(clientOptions);
 	const forceDebug = getForceDebug(arg2, arg4, arg5);
-	return { id, name, serverOptions, clientOptions, services, forceDebug };
+	const stdioEncoding = clientOptions.stdioEncoding;
+	const workspace = services.workspace;
+	const connectionProvider = new NodeConnectionProvider({serverOptions, forceDebug, stdioEncoding, workspace});
+	return { id, name, clientOptions, services, connectionProvider };
 }
 
-export class LanguageClient extends NodeLanguageClient {
+export class LanguageClient extends BaseLanguageClient {
 
 	private _c2p: c2p.Converter;
 	private _p2c: p2c.Converter;

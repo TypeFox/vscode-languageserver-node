@@ -8,12 +8,10 @@ import * as cp from 'child_process';
 import ChildProcess = cp.ChildProcess;
 
 import {
-	BaseLanguageClient, IConnection, BaseLanguageClientOptions, InitializeError
+	IConnection, InitializeError
 } from './base';
 
-import {
-	Workspace
-} from './services';
+import { OutputChannel, Workspace } from './services';
 
 import {
 	Logger, createMessageConnection, ErrorCodes, ResponseError,
@@ -24,6 +22,10 @@ import {
 	createClientPipeTransport, generateRandomPipeName, MessageConnection
 } from 'vscode-jsonrpc';
 
+import Uri from 'vscode-uri';
+
+import { createConnection as createIConnection, IConnectionProvider, ConnectionErrorHandler, ConnectionCloseHandler } from './connection';
+
 import * as is from './utils/is';
 import * as electron from './utils/electron';
 import { terminate } from './utils/processes';
@@ -33,7 +35,6 @@ export {
 	RequestType, RequestType0, RequestHandler, RequestHandler0, GenericRequestHandler,
 	NotificationType, NotificationType0, NotificationHandler, NotificationHandler0, GenericNotificationHandler
 }
-
 export * from 'vscode-languageserver-types';
 export * from './protocol';
 export * from './base';
@@ -103,41 +104,50 @@ export interface NodeModule {
 
 export type ServerOptions = Executable | { run: Executable; debug: Executable; } | { run: NodeModule; debug: NodeModule } | NodeModule | (() => Thenable<ChildProcess | StreamInfo>);
 
-export interface NodeLanguageClientOptions extends BaseLanguageClientOptions {
-	/**
-	 * The encoding use to read stdout and stderr. Defaults
-	 * to 'utf8' if ommitted.
-	 */
-	stdioEncoding?: string;
-}
-
-export namespace NodeLanguageClient {
-	export interface IOptions extends BaseLanguageClient.IOptions {
+export namespace NodeConnectionProvider {
+	export interface IOptions {
 		serverOptions: ServerOptions;
-		clientOptions: NodeLanguageClientOptions;
 		forceDebug?: boolean;
+		stdioEncoding?: string;
+		workspace: Workspace;
 	}
 }
 
-export class NodeLanguageClient extends BaseLanguageClient {
+export class NodeConnectionProvider implements IConnectionProvider {
 
 	private _serverOptions: ServerOptions;
-	private _forceDebug: boolean;
 	private _encoding: string;
-
+	private _forceDebug: boolean;
+	private workspace: Workspace;
 	private _childProcess: ChildProcess | undefined;
 
-	public constructor(options: NodeLanguageClient.IOptions) {
-		super(options);
+	constructor(options: NodeConnectionProvider.IOptions) {
 		this._serverOptions = options.serverOptions;
-
-		const clientOptions = options.clientOptions || {};
-		this._encoding = clientOptions.stdioEncoding || 'utf8';
+		this._encoding = options.stdioEncoding || 'utf8';
 		this._forceDebug = options.forceDebug === void 0 ? false : options.forceDebug;
+		this.workspace = options.workspace;
 		this._childProcess = undefined;
 	}
 
-	protected createRPCConnection(): Thenable<MessageConnection> {
+	get(errorHandler: ConnectionErrorHandler, closeHandler: ConnectionCloseHandler, outputChannel: OutputChannel | undefined): Thenable<IConnection> {
+		return this.createRPCConnection(outputChannel).then(messageConnection => {
+			const connection = createIConnection(messageConnection, errorHandler, () => {
+				closeHandler();
+				this._childProcess = undefined;
+			});
+			const shutdown = connection.shutdown.bind(connection);
+			connection.shutdown = () => {
+				return shutdown().then(() => {
+					let toCheck = this._childProcess;
+					this._childProcess = undefined;
+					this.checkProcessDied(toCheck);
+				});
+			};
+			return connection;
+		});
+	}
+
+	protected createRPCConnection(outputChannel: OutputChannel | undefined): Thenable<MessageConnection> {
 		function getEnvironment(env: any): any {
 			if (!env) {
 				return process.env;
@@ -196,7 +206,7 @@ export class NodeLanguageClient extends BaseLanguageClient {
 					node.args.forEach(element => args.push(element));
 				}
 				let execOptions: ExecutableOptions = Object.create(null);
-				execOptions.cwd = options.cwd || Workspace.getRootPath(this.workspace);
+				execOptions.cwd = options.cwd || this.rootPath;
 				execOptions.env = getEnvironment(options.env);
 				let pipeName: string | undefined = undefined;
 				if (transport === TransportKind.ipc) {
@@ -215,9 +225,13 @@ export class NodeLanguageClient extends BaseLanguageClient {
 						return Promise.reject<MessageConnection>(`Launching server using runtime ${node.runtime} failed.`);
 					}
 					this._childProcess = process;
-					process.stderr.on('data', data => this.outputChannel!.append(is.string(data) ? data : data.toString(encoding)));
+					if (outputChannel) {
+						process.stderr.on('data', data => outputChannel.append(is.string(data) ? data : data.toString(encoding)));
+					}
 					if (transport === TransportKind.ipc) {
-						process.stdout.on('data', data => this.outputChannel!.append(is.string(data) ? data : data.toString(encoding)));
+						if (outputChannel) {
+							process.stdout.on('data', data => outputChannel.append(is.string(data) ? data : data.toString(encoding)));
+						}
 						return Promise.resolve(createConnection(new IPCMessageReader(process), new IPCMessageWriter(process)));
 					} else {
 						return Promise.resolve(createConnection(process.stdout, process.stdin));
@@ -229,8 +243,10 @@ export class NodeLanguageClient extends BaseLanguageClient {
 							return Promise.reject<MessageConnection>(`Launching server using runtime ${node.runtime} failed.`);
 						}
 						this._childProcess = process;
-						process.stderr.on('data', data => this.outputChannel!.append(is.string(data) ? data : data.toString(encoding)));
-						process.stdout.on('data', data => this.outputChannel!.append(is.string(data) ? data : data.toString(encoding)));
+						if (outputChannel) {
+							process.stderr.on('data', data => outputChannel.append(is.string(data) ? data : data.toString(encoding)));
+							process.stdout.on('data', data => outputChannel.append(is.string(data) ? data : data.toString(encoding)));
+						}
 						return transport.onConnected().then((protocol) => {
 							return createConnection(protocol[0], protocol[1]);
 						});
@@ -250,31 +266,37 @@ export class NodeLanguageClient extends BaseLanguageClient {
 					}
 					let options: ForkOptions = node.options || Object.create(null);
 					options.execArgv = options.execArgv || [];
-					options.cwd = options.cwd || Workspace.getRootPath(this.workspace);
+					options.cwd = options.cwd || this.rootPath;
 					if (transport === TransportKind.ipc || transport === TransportKind.stdio) {
 						electron.fork(node.module, args || [], options, (error, cp) => {
 							if (error || !cp) {
 								reject(error);
 							} else {
 								this._childProcess = cp;
-								cp.stderr.on('data', data => this.outputChannel!.append(is.string(data) ? data : data.toString(encoding)));
+								if (outputChannel) {
+									cp.stderr.on('data', data => outputChannel.append(is.string(data) ? data : data.toString(encoding)));
+								}
 								if (transport === TransportKind.ipc) {
-									cp.stdout.on('data', data => this.outputChannel!.append(is.string(data) ? data : data.toString(encoding)));
+									if (outputChannel) {
+										cp.stdout.on('data', data => outputChannel.append(is.string(data) ? data : data.toString(encoding)));
+									}
 									resolve(createConnection(new IPCMessageReader(this._childProcess), new IPCMessageWriter(this._childProcess)));
 								} else {
 									resolve(createConnection(cp.stdout, cp.stdin));
 								}
 							}
 						});
-					}  else if (transport === TransportKind.pipe) {
+					} else if (transport === TransportKind.pipe) {
 						createClientPipeTransport(pipeName!).then((transport) => {
 							electron.fork(node.module, args || [], options, (error, cp) => {
 								if (error || !cp) {
 									reject(error);
 								} else {
 									this._childProcess = cp;
-									cp.stderr.on('data', data => this.outputChannel!.append(is.string(data) ? data : data.toString(encoding)));
-									cp.stdout.on('data', data => this.outputChannel!.append(is.string(data) ? data : data.toString(encoding)));
+									if (outputChannel) {
+										cp.stderr.on('data', data => outputChannel.append(is.string(data) ? data : data.toString(encoding)));
+										cp.stdout.on('data', data => outputChannel.append(is.string(data) ? data : data.toString(encoding)));
+									}
 									transport.onConnected().then((protocol) => {
 										resolve(createConnection(protocol[0], protocol[1]));
 									});
@@ -287,29 +309,18 @@ export class NodeLanguageClient extends BaseLanguageClient {
 		} else if (json.command) {
 			let command: Executable = <Executable>json;
 			let options = command.options || {};
-			options.cwd = options.cwd || Workspace.getRootPath(this.workspace);
+			options.cwd = options.cwd || this.rootPath;
 			let process = cp.spawn(command.command, command.args, command.options);
 			if (!process || !process.pid) {
 				return Promise.reject<MessageConnection>(`Launching server using command ${command.command} failed.`);
 			}
-			process.stderr.on('data', data => this.outputChannel!.append(is.string(data) ? data : data.toString(encoding)));
+			if (outputChannel) {
+				process.stderr.on('data', data => outputChannel.append(is.string(data) ? data : data.toString(encoding)));
+			}
 			this._childProcess = process;
 			return Promise.resolve(createConnection(process.stdout, process.stdin));
 		}
 		return Promise.reject<MessageConnection>(new Error(`Unsupported server configuartion ` + JSON.stringify(server, null, 4)));
-	}
-
-	protected doHandleConnectionClosed(): void {
-		this._childProcess = undefined;
-		super.doHandleConnectionClosed();
-	}
-
-	protected handleConnectionShutdown(connection: IConnection): void {
-		super.handleConnectionShutdown(connection);
-		let toCheck = this._childProcess;
-		this._childProcess = undefined;
-		// Remove all markers
-		this.checkProcessDied(toCheck);
 	}
 
 	private checkProcessDied(childProcess: ChildProcess | undefined): void {
@@ -326,4 +337,15 @@ export class NodeLanguageClient extends BaseLanguageClient {
 			}
 		}, 2000);
 	}
-}
+
+	protected get rootPath(): string | undefined {
+		if (this.workspace.rootPath) {
+			return this.workspace.rootPath;
+		}
+		 if (this.workspace.rootUri) {
+			return Uri.parse(this.workspace.rootUri).fsPath;
+		}
+		return undefined;
+	}
+
+};

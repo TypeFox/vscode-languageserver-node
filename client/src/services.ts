@@ -23,8 +23,6 @@ import {
 	WorkspaceSymbolParams, TextDocumentContentChangeEvent
 } from 'vscode-languageserver-types';
 
-import Uri from 'vscode-uri';
-
 export interface DiagnosticCollection extends Disposable {
 	set(uri: string, diagnostics: Diagnostic[]): void;
 }
@@ -150,18 +148,7 @@ export interface Workspace {
     readonly onWillSaveTextDocument?: Event<TextDocumentWillSaveEvent>;
     readonly onDidSaveTextDocument?: Event<TextDocument>;
 	applyEdit?(changes: WorkspaceEdit): Thenable<boolean>;
-}
-
-export namespace Workspace {
-	export function getRootPath(workspace: Workspace): string | undefined {
-		if (workspace.rootPath) {
-			return workspace.rootPath;
-		}
-		 if (workspace.rootUri) {
-			return Uri.parse(workspace.rootUri).fsPath;
-		}
-		return undefined;
-	}
+	createFileSystemWatcher?(globPattern: string, ignoreCreateEvents?: boolean, ignoreChangeEvents?: boolean, ignoreDeleteEvents?: boolean): FileSystemWatcher;
 }
 
 export interface Commands {
