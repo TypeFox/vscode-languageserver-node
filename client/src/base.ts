@@ -1173,6 +1173,10 @@ export class BaseLanguageClient {
 			this._diagnostics.dispose();
 			this._diagnostics = undefined;
 		}
+		for (const handler of Array.from(this._registeredHandlers.values())) {
+			handler.dispose();
+		}
+		this._registeredHandlers.clear();
 	}
 
 	private notifyFileEvent(event: FileEvent): void {
@@ -1319,7 +1323,7 @@ export class BaseLanguageClient {
 		})
 	}
 
-	private _registeredHandlers: Map<string, FeatureHandler<any>> = new Map<string, FeatureHandler<any>>();
+	private readonly _registeredHandlers = new Map<string, FeatureHandler<any>>();
 	private initRegistrationHandlers(_connection: IConnection) {
 		const syncedDocuments: Map<string, TextDocument> = new Map<string, TextDocument>();
 		const logger = (type: RPCMessageType, error: any): void => { this.logFailedRequest(type, error); };
