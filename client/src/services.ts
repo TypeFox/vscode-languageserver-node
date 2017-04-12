@@ -90,9 +90,14 @@ export interface DocumentLinkProvider {
 	resolveDocumentLink?(link: DocumentLink, token: CancellationToken): Thenable<DocumentLink>;
 }
 
+export interface DocumentIdentifier {
+	uri: string;
+	languageId: string;
+}
+
 export interface Languages {
 	readonly completion?: CompletionClientCapabilities;
-	match(selector: DocumentSelector, document: {uri: string, languageId: string}): boolean;
+	match(selector: DocumentSelector, document: DocumentIdentifier): boolean;
     createDiagnosticCollection?(name?: string): DiagnosticCollection;
 	registerCompletionItemProvider?(selector: DocumentSelector, provider: CompletionItemProvider, ...triggerCharacters: string[]): Disposable;
 	registerHoverProvider?(selector: DocumentSelector, provider: HoverProvider): Disposable;
