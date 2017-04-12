@@ -56,13 +56,6 @@ class ConsoleLogger implements Logger {
 	}
 }
 
-function createConnection(inputStream: NodeJS.ReadableStream, outputStream: NodeJS.WritableStream): MessageConnection;
-function createConnection(reader: MessageReader, writer: MessageWriter): MessageConnection;
-function createConnection(input: any, output: any): MessageConnection {
-	let logger = new ConsoleLogger();
-	return createMessageConnection(input, output, logger);
-}
-
 export interface StreamInfo {
 	writer: NodeJS.WritableStream;
 	reader: NodeJS.ReadableStream;
@@ -173,10 +166,10 @@ export class NodeConnectionProvider implements IConnectionProvider {
 			return server().then((result) => {
 				let info = result as StreamInfo;
 				if (info.writer && info.reader) {
-					return createConnection(info.reader, info.writer);
+					return this.createConnection(info.reader, info.writer);
 				} else {
 					let cp = result as ChildProcess;
-					return createConnection(cp.stdout, cp.stdin);
+					return this.createConnection(cp.stdout, cp.stdin);
 				}
 			});
 		}
@@ -232,9 +225,9 @@ export class NodeConnectionProvider implements IConnectionProvider {
 						if (outputChannel) {
 							process.stdout.on('data', data => outputChannel.append(is.string(data) ? data : data.toString(encoding)));
 						}
-						return Promise.resolve(createConnection(new IPCMessageReader(process), new IPCMessageWriter(process)));
+						return Promise.resolve(this.createConnection(new IPCMessageReader(process), new IPCMessageWriter(process)));
 					} else {
-						return Promise.resolve(createConnection(process.stdout, process.stdin));
+						return Promise.resolve(this.createConnection(process.stdout, process.stdin));
 					}
 				} else if (transport == TransportKind.pipe) {
 					return createClientPipeTransport(pipeName!).then((transport) => {
@@ -248,7 +241,7 @@ export class NodeConnectionProvider implements IConnectionProvider {
 							process.stdout.on('data', data => outputChannel.append(is.string(data) ? data : data.toString(encoding)));
 						}
 						return transport.onConnected().then((protocol) => {
-							return createConnection(protocol[0], protocol[1]);
+							return this.createConnection(protocol[0], protocol[1]);
 						});
 					})
 				}
@@ -280,9 +273,9 @@ export class NodeConnectionProvider implements IConnectionProvider {
 									if (outputChannel) {
 										cp.stdout.on('data', data => outputChannel.append(is.string(data) ? data : data.toString(encoding)));
 									}
-									resolve(createConnection(new IPCMessageReader(this._childProcess), new IPCMessageWriter(this._childProcess)));
+									resolve(this.createConnection(new IPCMessageReader(this._childProcess), new IPCMessageWriter(this._childProcess)));
 								} else {
-									resolve(createConnection(cp.stdout, cp.stdin));
+									resolve(this.createConnection(cp.stdout, cp.stdin));
 								}
 							}
 						});
@@ -298,7 +291,7 @@ export class NodeConnectionProvider implements IConnectionProvider {
 										cp.stdout.on('data', data => outputChannel.append(is.string(data) ? data : data.toString(encoding)));
 									}
 									transport.onConnected().then((protocol) => {
-										resolve(createConnection(protocol[0], protocol[1]));
+										resolve(this.createConnection(protocol[0], protocol[1]));
 									});
 								}
 							});
@@ -318,9 +311,16 @@ export class NodeConnectionProvider implements IConnectionProvider {
 				process.stderr.on('data', data => outputChannel.append(is.string(data) ? data : data.toString(encoding)));
 			}
 			this._childProcess = process;
-			return Promise.resolve(createConnection(process.stdout, process.stdin));
+			return Promise.resolve(this.createConnection(process.stdout, process.stdin));
 		}
 		return Promise.reject<MessageConnection>(new Error(`Unsupported server configuartion ` + JSON.stringify(server, null, 4)));
+	}
+
+	protected createConnection(inputStream: NodeJS.ReadableStream, outputStream: NodeJS.WritableStream): MessageConnection;
+	protected createConnection(reader: MessageReader, writer: MessageWriter): MessageConnection;
+	protected createConnection(input: any, output: any): MessageConnection {
+		let logger = new ConsoleLogger();
+		return createMessageConnection(input, output, logger);
 	}
 
 	private checkProcessDied(childProcess: ChildProcess | undefined): void {
