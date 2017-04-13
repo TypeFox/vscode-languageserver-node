@@ -1,18 +1,18 @@
 {
-  "name": "vscode-languageclient",
-  "description": "VSCode Language client implementation",
-  "version": "3.2.0",
-  "author": "Microsoft Corporation",
+  "name": "vscode-base-languageclient",
+  "description": "VSCode Base Language client implementation",
+  "version": "0.0.1",
+  "author": "TypeFox GmbH",
   "license": "MIT",
   "engines": {
     "vscode": "^1.8.0"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/Microsoft/vscode-languageserver-node.git"
+    "url": "https://github.com/TypeFox/vscode-languageserver-node.git"
   },
   "bugs": {
-    "url": "https://github.com/Microsoft/vscode-languageserver-node/issues"
+    "url": "https://github.com/TypeFox/vscode-languageserver-node/issues"
   },
   "main": "./lib/main.js",
   "typings": "./lib/main",
@@ -27,7 +27,7 @@
     "vscode-uri": "^1.0.0"
   },
   "scripts": {
-    "prepublish": "node ./node_modules/vscode/bin/install && tsc -p ./src",
+    "prepublish": "node ./node_modules/vscode/bin/install && npm run compile",
     "compile": "tsc -p ./src",
     "watch": "tsc -w -p ./src",
     "update-vscode": "node ./node_modules/vscode/bin/install"
