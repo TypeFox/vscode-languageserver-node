@@ -12,7 +12,7 @@ import {
 } from './protocol';
 
 import {
-	Disposable, CancellationToken, Event
+	Disposable, CancellationToken, Event, Emitter
 } from 'vscode-jsonrpc';
 
 import {
@@ -22,6 +22,12 @@ import {
 	DocumentLink, TextDocumentSaveReason, DocumentSymbolParams,
 	WorkspaceSymbolParams, TextDocumentContentChangeEvent
 } from 'vscode-languageserver-types';
+
+export {
+	Disposable, CancellationToken, Event, Emitter
+}
+export * from './protocol';
+export * from 'vscode-languageserver-types';
 
 export interface DiagnosticCollection extends Disposable {
 	set(uri: string, diagnostics: Diagnostic[]): void;
