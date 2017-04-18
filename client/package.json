@@ -1,8 +1,8 @@
 {
   "name": "vscode-base-languageclient",
   "description": "VSCode Base Language client implementation",
-  "version": "0.0.1",
-  "author": "TypeFox GmbH",
+  "version": "0.0.1-alpha.0",
+  "author": "TypeFox GmbH (http://www.typefox.io)",
   "license": "MIT",
   "engines": {
     "vscode": "^1.8.0"
