@@ -1,5 +1,5 @@
 Original work Copyright (c) Microsoft Corporation
-Modified work Copyright (c) 2017 TypeFox GmbH
+Modified work Copyright (c) 2017 TypeFox GmbH (http://www.typefox.io)
 
 All rights reserved.
 
