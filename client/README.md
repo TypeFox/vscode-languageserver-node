@@ -6,4 +6,4 @@ See [here](https://code.visualstudio.com/docs/extensions/example-language-server
 implement language servers for [VSCode](https://code.visualstudio.com/).
 
 ## License
-[MIT](https://github.com/TypeFox/vscode-languageserver-node/blob/master/License.txt)
+[MIT](https://github.com/TypeFox/vscode-languageserver-node/blob/master/client/License.txt)
