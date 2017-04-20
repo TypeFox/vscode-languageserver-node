@@ -137,7 +137,7 @@ export interface WorkspaceConfiguration {
     get<T>(section: string, defaultValue?: T): T;
 }
 
-export interface FileSystemWatcher {
+export interface FileSystemWatcher extends Disposable {
     readonly onFileEvent: Event<FileEvent>;
 }
 
