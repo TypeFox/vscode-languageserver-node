@@ -1069,7 +1069,7 @@ export class BaseLanguageClient {
 							includeText: false
 						}
 					};
-				} else if (this._capabilites.textDocumentSync !== void 0 && this._capabilites.textDocumentSync === null) {
+				} else if (this._capabilites.textDocumentSync !== void 0 && this._capabilites.textDocumentSync !== null) {
 					textDocumentSyncOptions = this._capabilites.textDocumentSync as TextDocumentSyncOptions;
 				}
 				if (textDocumentSyncOptions) {
