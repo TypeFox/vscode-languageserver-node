@@ -5,7 +5,7 @@
 'use strict';
 
 import {
-	BaseLanguageClient
+	BaseLanguageClient, BaseLanguageClientOptions
 } from './base';
 import { NodeConnectionProvider, ServerOptions } from './nodeConnection';
 
@@ -17,14 +17,15 @@ import * as is from './utils/is';
 
 import * as c2p from './codeConverter';
 import * as p2c from './protocolConverter';
+
 export { Converter as Code2ProtocolConverter } from './codeConverter';
 export { Converter as Protocol2CodeConverter } from './protocolConverter';
 
 export * from 'vscode-languageserver-types';
-export * from './base';
+
 export { ServerOptions } from './nodeConnection';
 
-export interface LanguageClientOptions extends BaseLanguageClient.IOptions {
+export interface LanguageClientOptions extends BaseLanguageClientOptions {
 	/**
 	 * The encoding use to read stdout and stderr. Defaults
 	 * to 'utf8' if ommitted.
@@ -63,7 +64,7 @@ function getServices(clientOptions: LanguageClientOptions): BaseLanguageClient.I
 } 
 function createOptions(arg1: string, arg2: ServerOptions | string, arg3: LanguageClientOptions | ServerOptions, arg4?: boolean | LanguageClientOptions, arg5?: boolean): BaseLanguageClient.IOptions {
 	const id = getId(arg1, arg2);
-	const name = getName(arg1, arg2)
+	const name = getName(arg1, arg2);
 	const serverOptions = getServerOptions(arg2, arg3);
 	const clientOptions = getClientOptions(arg2, arg3, arg4);
 	const services = getServices(clientOptions);

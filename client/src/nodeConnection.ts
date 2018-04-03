@@ -183,7 +183,7 @@ export class NodeConnectionProvider implements IConnectionProvider {
 				json = runDebug.run;
 			}
 		} else {
-			json = server;
+			json = {}; // server;
 		}
 		if (json.module) {
 			let node: NodeModule = <NodeModule>json;

@@ -1051,7 +1051,11 @@ export class BaseLanguageClient {
 			this._capabilites = result.capabilities;
 
 			connection.onDiagnostics(params => this.handleDiagnostics(params));
+			// backward compatibility
+			connection.onRequest('client/registerFeature', params => this.handleRegistrationRequest(params));
 			connection.onRequest(RegistrationRequest.type, params => this.handleRegistrationRequest(params));
+			// backward compatibility
+			connection.onRequest('client/unregisterFeature', params => this.handleUnregistrationRequest(params));
 			connection.onRequest(UnregistrationRequest.type, params => this.handleUnregistrationRequest(params));
 			connection.onRequest(ApplyWorkspaceEditRequest.type, params => this.handleApplyWorkspaceEdit(params));
 			connection.sendNotification(InitializedNotification.type, {});
@@ -1642,7 +1646,7 @@ export class BaseLanguageClient {
 				(error: ResponseError<E>) => {
 					this.logFailedRequest(type, error);
 					const result = onError ? onError(params, error) : null;
-					return Promise.resolve(result);
+					return Promise.reject(result);
 				}
 			);
 		}

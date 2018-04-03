@@ -8,7 +8,8 @@ import {
 	DocumentSelector, FileEvent, MessageActionItem, MessageType,
 	TextDocumentPositionParams, ReferenceParams, CodeActionParams, CodeLensParams, DocumentFormattingParams,
 	DocumentRangeFormattingParams, DocumentOnTypeFormattingParams, RenameParams, DocumentLinkParams,
-	WorkspaceClientCapabilites, SynchronizationClientCapabilities, CompletionClientCapabilities
+	WorkspaceClientCapabilites, SynchronizationClientCapabilities, CompletionClientCapabilities,
+	DidChangeTextDocumentParams
 } from './protocol';
 
 import {
@@ -154,7 +155,7 @@ export interface Workspace {
     readonly textDocuments: TextDocument[];
 	readonly onDidOpenTextDocument: Event<TextDocument>;
     readonly onDidCloseTextDocument: Event<TextDocument>;
-    readonly onDidChangeTextDocument: Event<TextDocumentDidChangeEvent>;
+    readonly onDidChangeTextDocument: Event<DidChangeTextDocumentParams>;
     readonly configurations?: Configurations;
     readonly onWillSaveTextDocument?: Event<TextDocumentWillSaveEvent>;
     readonly onDidSaveTextDocument?: Event<TextDocument>;
