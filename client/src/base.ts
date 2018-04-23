@@ -481,7 +481,10 @@ class WillSaveWaitUntilFeature implements FeatureHandler<TextDocumentRegistratio
 			event.waitUntil!(
 				this._client.sendRequest(
 					WillSaveTextDocumentWaitUntilRequest.type,
-					event
+					{
+						textDocument: { uri: event.textDocument.uri },
+						reason: event.reason
+					}
 				)
 			);
 		}
@@ -1344,7 +1347,10 @@ export class BaseLanguageClient {
 				WillSaveTextDocumentNotification.type.method,
 				new DocumentNotifiactions<WillSaveTextDocumentParams, TextDocumentWillSaveEvent>(
 					this, this.workspace.onWillSaveTextDocument, WillSaveTextDocumentNotification.type,
-					event => event,
+					event => <WillSaveTextDocumentParams> {
+						textDocument: { uri: event.textDocument.uri },
+						reason: event.reason
+					},
 					(selectors, willSaveEvent) => DocumentNotifiactions.textDocumentFilter(this.languages, selectors, willSaveEvent.textDocument)
 				)
 			);
