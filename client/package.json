@@ -1,5 +1,5 @@
 {
-	"name": "vscode-languageclient",
+	"name": "vscode-base-languageclient",
 	"description": "VSCode Language client implementation",
 	"version": "4.4.0",
 	"author": "Microsoft Corporation",

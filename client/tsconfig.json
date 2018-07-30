@@ -1,9 +1,10 @@
 {
 	"extends": "../tsconfig.base.json",
 	"compilerOptions": {
-		"target": "es6",
+		"target": "es5",
 		"module": "commonjs",
 		"moduleResolution": "node",
+		"downlevelIteration": true,
 		"sourceMap": false,
 		"inlineSources": false,
 		"declaration": true,
