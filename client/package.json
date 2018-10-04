@@ -17,11 +17,11 @@
 	"main": "./lib/main.js",
 	"typings": "./lib/main",
 	"devDependencies": {
-		"shx": "^0.3.1",
-		"vscode": "^1.1.18"
+		"shx": "^0.3.1"
 	},
 	"dependencies": {
-		"vscode-languageserver-protocol": "^3.10.0"
+		"vscode-languageserver-protocol": "^3.10.0",
+		"vscode": "^1.1.18"
 	},
 	"scripts": {
 		"prepare": "npm run update-vscode",
