@@ -1,5 +1,5 @@
 {
-	"name": "vscode-languageclient",
+	"name": "vscode-base-languageclient",
 	"description": "VSCode Language client implementation",
 	"version": "5.3.0-next.6",
 	"author": "Microsoft Corporation",
@@ -28,7 +28,7 @@
 	},
 	"scripts": {
 		"prepare": "npm run update-vscode",
-		"prepublishOnly": "npm run clean && npm run compile && npm test",
+		"prepublishOnly": "npm run clean && npm run compile",
 		"postpublish": "node ../build/npm/post-publish.js",
 		"compile": "node ../build/bin/tsc -p ./tsconfig.json && shx cp src/utils/terminateProcess.sh lib/utils/terminateProcess.sh",
 		"watch": "node ../build/bin/tsc -w -p ./tsconfig.json",
